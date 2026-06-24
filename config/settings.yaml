@@ -17,7 +17,9 @@ data:
   market: "A-share"          # 市场：A 股
   frequency: "daily"         # 频率：日线
   lookback_years: 5          # 回看年数
-  start_date: "2021-01-01"   # 数据起始日期
+  # 数据区间需覆盖一轮 Walk-Forward：训练(3y)+验证(1y)+测试(1y)=5 年。
+  # 这里取 2019-01-01 ~ 2024-12-31（6 年）留出 MA/ATR 暖机余量。
+  start_date: "2019-01-01"   # 数据起始日期
   end_date: "2024-12-31"     # 数据结束日期
   # 本地缓存目录（相对项目根目录）。已下载的数据会缓存为 CSV，避免重复请求 Tushare。
   raw_dir: "data/raw"

@@ -20,3 +20,9 @@ matplotlib>=3.7      # 绘图（净值曲线、回撤等）
 
 # --- 配置文件 ---
 PyYAML>=6.0          # 读取 config/settings.yaml
+
+# --- 测试 ---
+# 单元测试基于标准库 unittest 编写，无需额外依赖即可运行：
+#   python -m unittest discover -s tests
+# 如需更友好的输出，可选装 pytest 后运行：pytest tests
+pytest>=7.0          # （可选）测试运行器
