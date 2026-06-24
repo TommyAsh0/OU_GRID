@@ -124,7 +124,8 @@ ou-grid-strategy/
 │   │   └── controller.py      # 风控模块
 │   ├── backtest/
 │   │   ├── engine.py          # 回测引擎
-│   │   └── metrics.py         # 绩效指标计算
+│   │   ├── metrics.py         # 绩效指标计算
+│   │   └── visualizer.py      # 回测可视化（K线+买卖点 / 盘前因子，HTML）
 │   └── live/
 │       ├── runner.py          # 实盘运行主程序
 │       └── monitor.py         # 实盘监控
@@ -139,6 +140,8 @@ ou-grid-strategy/
 │   ├── test_grid_engine.py
 │   └── test_risk_controller.py
 ├── logs/
+├── run_backtest.py            # 回测主程序（筛选→选K→测试→汇总）
+├── bt_view.py                 # 单标的回测可视化入口（生成交互式 HTML）
 ├── requirements.txt
 └── README.md
 ```
@@ -154,7 +157,7 @@ Code
   数据：pandas, numpy
   统计：statsmodels (ADF/KPSS/OLS), arch (Hurst)
   回测：自建（不用第三方回测框架，控制细节）
-  可视化：matplotlib, seaborn
+  可视化：matplotlib, seaborn（静态图）；plotly（交互式 HTML：K线+买卖点 / 盘前因子）
   配置：pyyaml
   日志：logging（标准库）
   数据源：tushare / akshare / 通联数据（任选其一）
@@ -915,6 +918,44 @@ Code
 如果测试集不通过：
   不要调参数 → 回到阶段3重新审视标的筛选逻辑
   或者接受"这个策略在当前市场环境下不适用"的结论
+```
+
+### 8.5 结果可视化（bt_view.py）
+
+把「单只标的」的一次回测画成一张**可交互的 HTML 图表**，直观核对策略行为。
+绘图逻辑集中在 `src/backtest/visualizer.py`，入口脚本为根目录的 `bt_view.py`。
+
+图表布局：
+
+```
+主图（上，占 70%）：K 线（蜡烛图）+ MA 网格中轴
+                    + 每个买入点（▲ 红）/ 卖出点（▼ 绿）
+                    悬浮可见：层号 / 成交价 / 数量 / 实现盈亏
+副图（下，占 30%）：每天「盘前可见」的因子值
+                    Z 偏离度主曲线 + Z=0 参考线
+                    Regime 状态背景色带（黄=减半 / 红=暂停）
+                    悬浮可见：滚动 κ / 半衰期 / Regime 名称
+```
+
+核心原则——**盘前可见、无前视**：
+
+```
+真实交易中，t 日开盘前只能看到「t-1 日收盘」为止的数据。
+因此副图每日因子（Z / 滚动κ / 半衰期 / Regime）都按「每天滚动重算」：
+  - 逐日推进，每天只喂入「当日及之前」的数据估计因子（不追求速度，逻辑直白）；
+  - 再整体后移一位（shift 1）对齐到「盘前可观测日」。
+最终：图上 t 日副图显示的，就是 t 日盘前你真实能看到的值（t 日看到的是 t-1 数据）。
+买卖点与回测引擎完全同源（直接取 BacktestEngine 的成交列表 fills），保证图实一致。
+```
+
+运行方式：
+
+```bash
+python bt_view.py                 # 用默认标的（股票池第一只）
+python bt_view.py 600519.SH       # 指定标的代码
+python bt_view.py 600519.SH 1.0   # 再指定网格 K 值（ATR 倍数）
+
+# 输出：data/results/<代码>_view.html（自包含交互图，浏览器直接打开）
 ```
 
 ------

@@ -1,0 +1,26 @@
+# Python 字节码缓存与编译产物
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 回测产生的数据缓存与结果（保留目录占位的 .gitkeep）
+data/raw/*.csv
+data/processed/*.csv
+data/results/*.csv
+data/results/*.png
+data/results/*.html
+logs/*.log
+
+# IDE / 编辑器
+.vscode/
+.idea/
+*.swp
+
+# 操作系统
+.DS_Store
