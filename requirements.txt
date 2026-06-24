@@ -17,6 +17,7 @@ tushare>=1.2.89      # A 股行情数据接口（Tushare Pro）
 
 # --- 可视化 ---
 matplotlib>=3.7      # 绘图（净值曲线、回撤等）
+plotly>=5.0          # 交互式 HTML 图表（bt_view.py：K 线+买卖点 / 盘前因子）
 
 # --- 配置文件 ---
 PyYAML>=6.0          # 读取 config/settings.yaml

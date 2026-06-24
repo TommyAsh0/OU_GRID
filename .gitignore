@@ -14,6 +14,7 @@ data/raw/*.csv
 data/processed/*.csv
 data/results/*.csv
 data/results/*.png
+data/results/*.html
 logs/*.log
 
 # IDE / 编辑器
