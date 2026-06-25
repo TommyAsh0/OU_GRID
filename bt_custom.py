@@ -8,10 +8,10 @@
 #   用户给定的一组标的、在给定时间区间上回测，便于针对自选标的快速验证。
 #
 # 满足的需求：
-#   1. 自定义标的：兼容多个股票（逗号分隔或多次 --code 传入）。
-#   2. 自定义开始时间：--start（缺省回退配置 data.start_date）。
-#   3. 自定义结束时间（可选）：--end（缺省回退配置 data.end_date）。
-#   4. 是否使用「自动开仓系统」：--auto-open / --no-auto-open。
+#   1. 自定义标的：兼容多个股票（在下方 CODES 列表里填写）。
+#   2. 自定义开始时间：START（缺省回退配置 data.start_date）。
+#   3. 自定义结束时间（可选）：END（缺省回退配置 data.end_date）。
+#   4. 是否使用「自动开仓系统」：AUTO_OPEN（True / False）。
 #      开启 → 按之前版本的 Regime 进行开仓与四级风控（自动平仓 / 暂停）。
 #      关闭 → 不自动开仓、不触发风控交易；但 Regime / 因子 / 指标仍逐日
 #             照常计算并保留，仅用于可视化与数据准备。
@@ -27,18 +27,21 @@
 #     5. 绘图    : visualizer.build_figure / save_html 输出交互式 HTML。
 #     6. 落盘    : 每标的绩效 / 成交 CSV，外加一张多标的绩效汇总 CSV。
 #
-# 运行方式：
-#   python bt_custom.py --code 600519.SH
-#   python bt_custom.py --code 600519.SH,000858.SZ --start 2021-01-01
-#   python bt_custom.py --code 600519.SH --start 2021-01-01 --end 2023-12-31
-#   python bt_custom.py --code 600519.SH --no-auto-open   # 仅算因子、不开仓
-#   python bt_custom.py --code 600519.SH --k 1.2 --no-view # 指定 K、不出图
+# 运行方式（静态调用）：
+#   1) 直接编辑本文件顶部「回测参数（静态配置）」区域的几个常量
+#      （CODES / START / END / K / AUTO_OPEN / MAKE_HTML）；
+#   2) 然后运行：python bt_custom.py
+#   无需任何命令行参数。
+#
+#   也可作为库被其它脚本 / Notebook 静态调用：
+#       from bt_custom import run_custom, run_symbol
+#       run_custom(["600519.SH", "000858.SZ"], start="2021-01-01",
+#                  auto_open=False)   # 仅算因子、不开仓
 #
 # 说明：沙箱无法访问 Tushare 时会自动使用合成数据，整条流程仍可完整跑通，
 #       但结果仅用于演示系统正确性，不能用于真实投资决策。
 # ====================================================================
 
-import argparse
 import os
 import warnings
 
@@ -56,6 +59,32 @@ from src.data.fetcher import DataFetcher
 from src.data.processor import DataProcessor
 
 warnings.filterwarnings("ignore")
+
+# ====================================================================
+# 回测参数（静态配置）—— 直接修改下面的值，然后运行 `python bt_custom.py`。
+# 不再使用命令行参数；这些常量即本脚本的全部输入。
+# ====================================================================
+
+# 1) 自定义标的：填写一个或多个股票代码（兼容多标的）。
+#    留空列表 [] 则回退到配置股票池 get_stock_pool()。
+CODES = ["600519.SH"]
+
+# 2) 自定义开始时间（"YYYY-MM-DD" 或 "YYYYMMDD"）。None 回退配置 data.start_date。
+START = None
+
+# 3) 自定义结束时间（可选，同上格式）。None 回退配置 data.end_date。
+END = None
+
+# 4) 是否启用「自动开仓系统」（Regime 开仓 + 四级风控）。
+#    True  → 自动按 Regime 开仓并执行四级风控；
+#    False → 不开仓、不触发风控交易，仅逐日计算并保留因子 / Regime 供可视化。
+AUTO_OPEN = True
+
+# 5) 网格 ATR 倍数 K。None 沿用配置 grid.K（其余网格参数始终沿用配置）。
+K = None
+
+# 是否生成可视化 HTML（含盘前因子 / Regime 背景着色）。
+MAKE_HTML = True
 
 # 单标的回测所需的最少有效行数（清洗 + 指标暖机后）。不足则跳过该标的，
 # 避免在样本过短时产出无意义的绩效。与 bt_view.py 的阈值保持一致。
@@ -278,7 +307,7 @@ def _save_outputs(results: dict, summary: pd.DataFrame, auto_open: bool) -> None
             )
 
 
-# ======================== 工具与命令行 ========================
+# ======================== 工具与入口 ========================
 
 def _pct(v) -> str:
     """把比率格式化为百分比字符串（NaN → '-'）。"""
@@ -300,69 +329,20 @@ def _num(v) -> str:
         return "-"
 
 
-def _parse_codes(raw) -> list:
-    """把 --code 参数解析为标的列表（支持逗号分隔与多次传入）。"""
-    if not raw:
-        return []
-    codes = []
-    for item in raw:
-        for part in str(item).split(","):
-            part = part.strip()
-            if part:
-                codes.append(part)
-    return codes
+def main() -> dict:
+    """静态入口：读取本文件顶部的配置常量并执行自定义回测。
 
-
-def _build_arg_parser() -> argparse.ArgumentParser:
-    """构建命令行参数解析器。"""
-    parser = argparse.ArgumentParser(
-        description="自定义多标的回测（自定义标的 / 区间 / 是否自动开仓）。",
-    )
-    parser.add_argument(
-        "--code", action="append", default=None,
-        help="标的代码，可逗号分隔或多次传入；缺省用配置股票池。"
-             "例如 --code 600519.SH,000858.SZ",
-    )
-    parser.add_argument(
-        "--start", default=None,
-        help="回测开始日期 YYYY-MM-DD；缺省回退配置 data.start_date。",
-    )
-    parser.add_argument(
-        "--end", default=None,
-        help="回测结束日期 YYYY-MM-DD（可选）；缺省回退配置 data.end_date。",
-    )
-    parser.add_argument(
-        "--k", type=float, default=None,
-        help="网格 ATR 倍数 K；缺省沿用配置 grid.K（其余网格参数始终沿用配置）。",
-    )
-    # 自动开仓系统开关：默认开启；--no-auto-open 关闭。
-    parser.add_argument(
-        "--auto-open", dest="auto_open", action="store_true", default=True,
-        help="启用自动开仓系统（按 Regime 开仓 + 四级风控）。默认开启。",
-    )
-    parser.add_argument(
-        "--no-auto-open", dest="auto_open", action="store_false",
-        help="关闭自动开仓系统：仅计算因子 / Regime 用于可视化，不产生成交。",
-    )
-    parser.add_argument(
-        "--no-view", dest="make_html", action="store_false", default=True,
-        help="不生成可视化 HTML（仅跑回测并输出绩效 / 成交 CSV）。",
-    )
-    return parser
-
-
-def main(argv=None) -> dict:
-    """命令行入口：解析参数并执行自定义回测。"""
-    parser = _build_arg_parser()
-    args = parser.parse_args(argv)
-    codes = _parse_codes(args.code)
+    不接收任何命令行参数；要调整回测，请直接修改文件顶部
+    「回测参数（静态配置）」区域的 CODES / START / END / K /
+    AUTO_OPEN / MAKE_HTML。
+    """
     return run_custom(
-        codes,
-        start=args.start,
-        end=args.end,
-        auto_open=args.auto_open,
-        k=args.k,
-        make_html=args.make_html,
+        list(CODES),
+        start=START,
+        end=END,
+        auto_open=AUTO_OPEN,
+        k=K,
+        make_html=MAKE_HTML,
     )
 
 
