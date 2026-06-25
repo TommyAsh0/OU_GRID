@@ -57,6 +57,10 @@ from src.data.processor import DataProcessor
 
 warnings.filterwarnings("ignore")
 
+# 单标的回测所需的最少有效行数（清洗 + 指标暖机后）。不足则跳过该标的，
+# 避免在样本过短时产出无意义的绩效。与 bt_view.py 的阈值保持一致。
+MIN_BARS = 30
+
 
 def run_symbol(ts_code: str, start: str, end: str, capital: float,
                auto_open: bool = True, k: float = None,
@@ -90,7 +94,7 @@ def run_symbol(ts_code: str, start: str, end: str, capital: float,
     # —— 2) 清洗 + 指标计算 ——
     processor = DataProcessor()
     df = processor.process(raw)
-    if df.empty or len(df) < 30:
+    if df.empty or len(df) < MIN_BARS:
         if verbose:
             print(f"    数据不足（有效 {len(df)} 行），跳过该标的。")
         return {"ts_code": ts_code, "result": None, "html": "", "skipped": True}
