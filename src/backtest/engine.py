@@ -46,7 +46,7 @@ class BacktestEngine:
 
     def __init__(self, ts_code: str, df: pd.DataFrame, capital: float,
                  k: float = None, enable_regime: bool = True,
-                 enable_risk: bool = True):
+                 enable_risk: bool = True, enable_open: bool = True):
         """初始化回测。
 
         Args:
@@ -56,12 +56,17 @@ class BacktestEngine:
             k: 网格 ATR 倍数 K（验证集选定后传入）。默认读配置。
             enable_regime: 是否启用 Regime 策略开关。
             enable_risk: 是否启用四级风控。
+            enable_open: 是否启用「自动开仓系统」。为 False 时引擎仍逐日
+                推进并照常计算 Regime / 因子（供可视化与数据准备），但
+                不生成任何买入开新仓的限价单（从空仓起步即全程无交易），
+                也不触发风控的自动强平 / 暂停。默认 True（正常开仓回测）。
         """
         self.ts_code = ts_code
         self.df = df.reset_index(drop=True)
         self.capital = capital
         self.enable_regime = enable_regime
         self.enable_risk = enable_risk
+        self.enable_open = enable_open
 
         # 交易成本参数（README 5.5）。
         cost = CONFIG["cost"]
@@ -120,13 +125,17 @@ class BacktestEngine:
             equity = self._equity(row["close"])
 
             # —— 步骤 2：风控（高优先级在前）——
-            if self.enable_risk:
+            # 仅在「自动开仓系统」开启且启用风控时执行自动强平 / 暂停；
+            # 关闭自动开仓时（仅做因子计算与可视化）不触发任何风控交易。
+            if self.enable_open and self.enable_risk:
                 self.risk.update_equity_peak(equity)
                 stop_trading = self._apply_risk(row, equity)
             else:
                 stop_trading = False
 
             # —— 步骤 3：Regime 检测，得到当日仓位系数 ——
+            # Regime 始终按 enable_regime 计算并记录，即使关闭自动开仓也照常
+            # 输出（供可视化与数据准备使用）。
             if self.enable_regime:
                 z_window = self.df["Z"].values[:i + 1]
                 reg = self.regime.decide(
@@ -142,6 +151,7 @@ class BacktestEngine:
 
             # —— 步骤 4：生成次日限价单 ——
             # 触发账户/策略级停牌、或 regime 为红、或风控要求停手时，不再开新仓。
+            # 关闭「自动开仓系统」时不生成任何买入开仓单（见 _build_next_orders）。
             self.pending_orders = self._build_next_orders(
                 row, stop_trading, regime_state, position_scale, date,
             )
@@ -296,6 +306,12 @@ class BacktestEngine:
         - 若 regime 为黄（position_scale=0.5）→ 按半仓资金生成买入单；
         - 停牌日不挂任何单。
         """
+        # 关闭「自动开仓系统」：不生成任何限价单（既不开新仓也无需挂卖出，
+        # 因为从空仓起步、全程无持仓）。Regime / 因子仍在主循环照常计算并
+        # 记录，供可视化与数据准备使用。
+        if not self.enable_open:
+            return []
+
         if bool(row.get("is_suspended", False)):
             return []
 
